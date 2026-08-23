@@ -34,3 +34,19 @@ private const float OffsetY = -10f;
 ### Auto Srot Clothes By Date
 
 将服装列表的默认排序改为“日期从新到旧”
+
+### Studio Toolbar Hotkey Buttons
+
+通过 KKAPI 向 Studio 添加工具栏按钮，点击这些按钮即可触发插件热键，以执行指令或唤出插件面板等
+
+通过修改 206 行的配置列表：
+
+```cs
+buttons.Add(new ButtonConfig() {
+    tooltip = "BlendShapeEditor",
+    iconPath = "scripts/icons/BlendShapeEditor.png",
+    key = KeyCode.B, lctrl = false, rctrl = false, lshift = false, rshift = false, lalt = true, alt = false  // LeftAlt+B
+});
+```
+
+仿照以上格式写配置，注意 iconPath 为按钮的图标，像素最好32x32，不提供 iconPath 则按钮会是纯色按钮
