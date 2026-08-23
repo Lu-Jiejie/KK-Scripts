@@ -26,3 +26,11 @@
 private const float OffsetX = 137f;
 private const float OffsetY = -10f;
 ```
+
+### Auto Sort Female By Date
+
+启动游戏后，默认将加载 Female 后的排序选项卡变为“日期从新到旧”
+
+### Auto Srot Clothes By Date
+
+将服装列表的默认排序改为“日期从新到旧”
