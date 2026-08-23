@@ -9,6 +9,12 @@
 
 ## 作用
 
+### Quick Setup
+
+按下快捷键快速配置工作室女角色的状态（服装、皮肤等）。选中了女角色则只改变被选中角色的状态，否则改变所有女角色。
+
+在脚本内根据注释来配置。
+
 ### Disable New Dynamic Bones On Colliders
 
 读取场景后，自动找出所有的 DynamicBoneCollider ，将它们的 KKPE 内的 “Enable New Dynamic Bones” 选项变为 false。
