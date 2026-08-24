@@ -61,7 +61,7 @@ public static class QuickSetup {
     // 乳首凸起值 (Nipple Stand) 范围 0.0~1.0，0.35=35%
     private static float _nipStandValue = 0.5f;
 
-    // ---- 4. 皮肤效果 (KK_SkinEffects 插件) ----
+    // ---- 4. 皮肤效果 (KK_SkinEffects / KKS_SkinEffects 插件) ----
     // 数值范围：0=无, 1=少, 2=多, 3=最多（部分属性可能只有0和1两级）
     private static int _sweatLevel = 3;           // 流汗 (Sweat)
     private static int _tearLevel = 3;            // 流泪 (Tear)
@@ -129,18 +129,24 @@ public static class QuickSetup {
 
         private void InitReflection() {
             try {
-                // 查找 KK_SkinEffects 程序集（皮肤效果）
-                Assembly skinFxAsm = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
-                    if (asm.GetName().Name == "KK_SkinEffects") {
-                        skinFxAsm = asm;
-                        break;
+                // 兼容 KK / KKS：尝试两个版本的 SkinEffects 程序集
+                string[] asmNames = new string[] { "KK_SkinEffects", "KKS_SkinEffects" };
+                for (int i = 0; i < asmNames.Length; i++) {
+                    Assembly asm = null;
+                    try {
+                        asm = Assembly.Load(asmNames[i]);
+                    } catch { }
+                    if (asm == null) {
+                        foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) {
+                            if (a.GetName().Name == asmNames[i]) { asm = a; break; }
+                        }
                     }
-                }
-                if (skinFxAsm != null) {
-                    _skinEffectsControllerType = skinFxAsm.GetType("KK_SkinEffects.SkinEffectsController");
-                    if (_skinEffectsControllerType != null) {
-                        Debug.Log("[QuickSetup] 找到 KK_SkinEffects.SkinEffectsController");
+                    if (asm != null) {
+                        _skinEffectsControllerType = asm.GetType("KK_SkinEffects.SkinEffectsController");
+                        if (_skinEffectsControllerType != null) {
+                            Debug.Log("[QuickSetup] 找到 " + asmNames[i] + ".SkinEffectsController");
+                            break;
+                        }
                     }
                 }
                 // SiruParts 枚举类型
@@ -302,10 +308,10 @@ public static class QuickSetup {
                         Debug.LogWarning("[QuickSetup] 角色未找到 SkinEffectsController");
                     }
                 } catch (Exception ex) {
-                    Debug.LogWarning("[QuickSetup] 应用 KK_SkinEffects 失败: " + ex.Message);
+                    Debug.LogWarning("[QuickSetup] 应用 SkinEffects 失败: " + ex.Message);
                 }
             } else {
-                Debug.Log("[QuickSetup] KK_SkinEffects 未安装，跳过皮肤效果");
+                Debug.Log("[QuickSetup] SkinEffects 未安装，跳过皮肤效果");
             }
         }
 

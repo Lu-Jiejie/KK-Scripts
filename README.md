@@ -15,23 +15,17 @@
 
 在脚本内根据注释来配置。
 
+兼容 KK/KKS 。
+
+### Auto Hotkey
+
+配置“工作室启动完毕后”、“场景卡加载完毕后”执行指定的快捷键或快捷键序列。
+
 ### Disable New Dynamic Bones On Colliders
 
 读取场景后，自动找出所有的 DynamicBoneCollider ，将它们的 KKPE 内的 “Enable New Dynamic Bones” 选项变为 false。
 
 作用：防止加入新角色后动态骨骼异常吸附。
-
-### Work Panel Mover
-
-启动游戏后，将工作室右侧的工作面板移动到指定位置。
-
-作用：开窗口模式后如果最大化游戏，工作面板不会自动到最右侧，这个脚本是为了解决这个痛点。
-
-修改 17 行代码以更改偏移：
-```cs
-private const float OffsetX = 137f;
-private const float OffsetY = -10f;
-```
 
 ### Auto Sort Female By Date
 
@@ -56,3 +50,15 @@ buttons.Add(new ButtonConfig() {
 ```
 
 仿照以上格式写配置，注意 iconPath 为按钮的图标，像素最好32x32，不提供 iconPath 则按钮会是纯色按钮
+
+### Work Panel Mover
+
+启动游戏后，将工作室右侧的工作面板移动到指定位置。
+
+作用：开窗口模式后如果最大化游戏，工作面板不会自动到最右侧，这个脚本是为了解决这个痛点。
+
+修改 17 行代码以更改偏移：
+```cs
+private const float OffsetX = 137f;
+private const float OffsetY = -10f;
+```
