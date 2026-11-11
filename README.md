@@ -66,3 +66,11 @@ private const float OffsetY = -10f;
 ### Outfit Folder Memory
 
 持久化 服装卡文件夹列表 选项，在切换选中角色或取消选中的时候仍保持对应选项。
+
+### Material Config Only Copy
+
+为 MaterialEditor 添加一个切换按钮，允许用户只复制 MaterialEditor 内的配置项，而不修改对应的着色器。
+
+### Material Editor Filter Keeper
+
+来回切换两个角色时， MaterialEditor 的筛选项保持不变（持久化）。
