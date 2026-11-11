@@ -1,9 +1,9 @@
 // #name Outfit Folder Memory
 // #author Lu Jiejie
-// #desc 让 BrowserFolders 的 Outfit folder 面板记住当前选中的子文件夹，
+// #desc 让 BrowserFolders 的 Outfit folder 面板记住当前选中的子文件夹、展开状态和滚动位置，
 //       切换选中角色 / 取消选中 / 改选其它物品后不再折叠回根目录。
 // #proc_filter CharaStudio.exe
-// v1.0.0
+// v1.1.0
 
 using System;
 using System.Collections;
@@ -34,10 +34,10 @@ public static class OutfitFolderMemory {
             UnityEngine.Object.DestroyImmediate(obj);
     }
 
-    // 原理：服装列表每次重建时 BrowserFolders 都会 ClearCaches() 丢掉面板的
-    // FolderTreeView；下次绘制时新建的树以默认根目录为 CurrentFolder 并立刻重过滤，
-    // 于是文件夹树折叠、卡片列表回到根目录。这里记住每个根目录下最后选中的子文件夹，
-    // 一旦发现树被换成了新的，就把目录设回去。
+    // 原理：服装列表重建时 BrowserFolders 会 ClearCaches() 丢掉面板的 FolderTreeView，
+    // 下次绘制新建的树以默认根目录为 CurrentFolder 并立刻重过滤 —— 文件夹树折叠、
+    // 卡片列表回根目录、滚动条归零。
+    // 对策：能抢回原树就抢回（状态原样）；真建了新树就把目录、展开状态、滚动位置还回去。
     private class MemoryController : MonoBehaviour {
         private static readonly BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static
                                                      | BindingFlags.Public | BindingFlags.NonPublic
@@ -49,14 +49,29 @@ public static class OutfitFolderMemory {
         private PropertyInfo _pActive;
         private PropertyInfo _pTreeFolder;
         private PropertyInfo _pTreeDefault;
+        private FieldInfo _fScroll;
+        private FieldInfo _fOpened;
 
         private bool _ready;
         private bool _failed;
         private bool _errorLogged;
 
+        private class TreeState {
+            public Vector2 Scroll;
+            public HashSet<string> Opened;
+        }
+
         // 根目录 -> 用户最后选中的子文件夹
         private readonly Dictionary<string, string> _folders = new Dictionary<string, string>();
+        // 子文件夹 -> 该文件夹下的展开状态与滚动位置
+        private readonly Dictionary<string, TreeState> _states = new Dictionary<string, TreeState>();
+
+        private object _entry;
         private object _tree;
+        private string _root;
+        private string _folder;
+        // 新树第一帧内容高度还是 0，滚动值会被钳回顶部，所以要多推几帧
+        private int _restoreFrames;
 
         void Awake() {
             DontDestroyOnLoad(this);
@@ -101,9 +116,13 @@ public static class OutfitFolderMemory {
                 _pActive = FindProperty(entryType, "isActiveAndEnabled");
                 _pTreeFolder = treeType.GetProperty("CurrentFolder");
                 _pTreeDefault = treeType.GetProperty("DefaultPath");
+                _fScroll = FindField(treeType, "_treeScrollPosition");
+                _fOpened = FindField(treeType, "_openedObjects");
 
                 bool ok = _fListEntries != null && _fTree != null && _pEntryTree != null
                           && _pActive != null && _pTreeFolder != null && _pTreeDefault != null;
+                if (_fScroll == null || _fOpened == null)
+                    Debug.LogWarning("[OutfitFolderMemory] 未找到滚动/展开字段，只记文件夹不记滚动位置");
                 if (!ok) {
                     Debug.LogWarning("[OutfitFolderMemory] BrowserFolders 成员结构不符，脚本停用");
                     _failed = true;
@@ -142,55 +161,134 @@ public static class OutfitFolderMemory {
             IDictionary dict = _fListEntries.GetValue(null) as IDictionary;
             if (dict == null || dict.Count == 0) return;
 
-            object entry = null;
+            object active = null;
+            object first = null;
             foreach (object e in dict.Values) {
-                if (IsActive(e)) { entry = e; break; }
+                if (first == null) first = e;
+                if (IsActive(e)) { active = e; break; }
             }
-            if (entry == null) return; // 面板没打开
+            object entry = active != null ? active : first;
+            if (entry == null) return;
+
+            if (!ReferenceEquals(entry, _entry)) {
+                _entry = entry;
+                _tree = null;
+                _root = null;
+                _folder = null;
+                _restoreFrames = 0;
+            }
 
             object tree = _fTree.GetValue(entry);
 
             if (tree == null) {
-                // 树被插件丢掉了：重建并直接定位到记住的目录
-                tree = _pEntryTree.GetValue(entry, null);
-                if (tree == null) return;
-                string r = GetString(_pTreeDefault, tree);
-                string saved;
-                _folders.TryGetValue(r, out saved);
-                _tree = tree;
-                if (!string.IsNullOrEmpty(r) && !string.IsNullOrEmpty(saved)
-                    && saved != r && saved.StartsWith(r, StringComparison.OrdinalIgnoreCase)) {
-                    SetFolder(tree, saved);
-                    Debug.Log("[OutfitFolderMemory] 恢复文件夹: " + saved);
-                } else if (!string.IsNullOrEmpty(r)) {
-                    if (saved == null) _folders[r] = GetString(_pTreeFolder, tree);
-                }
-                return;
-            }
-
-            string root = GetString(_pTreeDefault, tree);
-            string current = GetString(_pTreeFolder, tree);
-            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(current)) return;
-
-            string remembered;
-            _folders.TryGetValue(root, out remembered);
-
-            if (!ReferenceEquals(tree, _tree)) {
-                // 换了一棵新树（= 插件重建），不是用户操作
-                _tree = tree;
-                if (!string.IsNullOrEmpty(remembered) && remembered != root
-                    && remembered.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-                    && remembered != current) {
-                    SetFolder(tree, remembered);
-                    Debug.Log("[OutfitFolderMemory] 恢复文件夹: " + remembered);
+                if (_tree != null) {
+                    // 抢回原树：展开状态与滚动位置全都还在
+                    _fTree.SetValue(entry, _tree);
+                    tree = _tree;
+                } else {
+                    if (!IsActive(entry)) return; // 面板没打开就不急着建树
+                    tree = _pEntryTree.GetValue(entry, null);
+                    if (tree == null) return;
+                    Adopt(tree);
                     return;
                 }
-                if (string.IsNullOrEmpty(remembered)) _folders[root] = current;
+            }
+
+            if (!ReferenceEquals(tree, _tree)) {
+                Adopt(tree);
                 return;
             }
 
-            // 同一棵树：目录变了就是用户自己点的
-            if (current != remembered) _folders[root] = current;
+            string current = GetString(_pTreeFolder, tree);
+            if (string.IsNullOrEmpty(current)) return;
+
+            if (current != _folder) {
+                // 同一棵树里目录变了 = 用户自己点的
+                _folder = current;
+                if (!string.IsNullOrEmpty(_root)) _folders[_root] = current;
+            }
+
+            RollState(tree, current);
+        }
+
+        private void Adopt(object tree) {
+            _tree = tree;
+            _root = GetString(_pTreeDefault, tree);
+
+            string saved = null;
+            bool hasSaved = !string.IsNullOrEmpty(_root) && _folders.TryGetValue(_root, out saved);
+            if (hasSaved && !string.IsNullOrEmpty(saved) && saved != _root
+                && saved.StartsWith(_root, StringComparison.OrdinalIgnoreCase)) {
+                if (SetFolder(tree, saved)) Debug.Log("[OutfitFolderMemory] 恢复文件夹: " + saved);
+            } else if (!hasSaved && !string.IsNullOrEmpty(_root)) {
+                _folders[_root] = GetString(_pTreeFolder, tree);
+            }
+
+            _folder = GetString(_pTreeFolder, tree);
+
+            TreeState st;
+            if (!string.IsNullOrEmpty(_folder) && _states.TryGetValue(_folder, out st)) {
+                ApplyOpened(tree, st);
+                ApplyScroll(tree, st);
+                _restoreFrames = 40;
+            } else {
+                _restoreFrames = 0;
+            }
+        }
+
+        // ========== 滚动位置 / 展开状态 ==========
+
+        private void RollState(object tree, string folder) {
+            TreeState st;
+            if (_restoreFrames > 0 && _states.TryGetValue(folder, out st)) {
+                ApplyScroll(tree, st);
+                _restoreFrames--;
+                return;
+            }
+            CaptureState(tree, folder);
+        }
+
+        private void CaptureState(object tree, string folder) {
+            if (string.IsNullOrEmpty(folder) || _fScroll == null) return;
+            TreeState st;
+            if (!_states.TryGetValue(folder, out st)) {
+                st = new TreeState();
+                _states[folder] = st;
+            }
+            try { st.Scroll = (Vector2)_fScroll.GetValue(tree); } catch { return; }
+
+            if (_fOpened == null) return;
+            try {
+                HashSet<string> src = _fOpened.GetValue(tree) as HashSet<string>;
+                if (src == null) return;
+                if (st.Opened == null) st.Opened = new HashSet<string>();
+                else st.Opened.Clear();
+                foreach (string s in src) st.Opened.Add(s);
+            } catch { }
+        }
+
+        private void ApplyScroll(object tree, TreeState st) {
+            if (tree == null || st == null) return;
+            try {
+                Vector2 now = (Vector2)_fScroll.GetValue(tree);
+                if (now == st.Scroll) return;
+                if (now != Vector2.zero) {
+                    // 用户在这几帧里自己滚了，以用户为准
+                    st.Scroll = now;
+                    _restoreFrames = 0;
+                    return;
+                }
+                _fScroll.SetValue(tree, st.Scroll);
+            } catch { }
+        }
+
+        private void ApplyOpened(object tree, TreeState st) {
+            if (tree == null || st == null || st.Opened == null) return;
+            try {
+                HashSet<string> dst = _fOpened.GetValue(tree) as HashSet<string>;
+                if (dst == null) return;
+                foreach (string s in st.Opened) dst.Add(s);
+            } catch { }
         }
 
         // ========== 工具 ==========
@@ -203,8 +301,12 @@ public static class OutfitFolderMemory {
             try { return (string)prop.GetValue(target, null); } catch { return null; }
         }
 
-        private void SetFolder(object tree, string folder) {
-            try { _pTreeFolder.SetValue(tree, folder, null); } catch { }
+        private bool SetFolder(object tree, string folder) {
+            try {
+                if (GetString(_pTreeFolder, tree) == folder) return false;
+                _pTreeFolder.SetValue(tree, folder, null);
+                return true;
+            } catch { return false; }
         }
     }
 }
