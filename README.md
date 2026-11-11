@@ -62,3 +62,7 @@ buttons.Add(new ButtonConfig() {
 private const float OffsetX = 137f;
 private const float OffsetY = -10f;
 ```
+
+### Outfit Folder Memory
+
+持久化 服装卡文件夹列表 选项，在切换选中角色或取消选中的时候仍保持对应选项。
